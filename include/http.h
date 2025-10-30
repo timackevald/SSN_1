@@ -4,7 +4,8 @@
 #include <stdint.h>
 #include <time.h>
 
-typedef enum {
+typedef enum 
+{
     HTTP_STATE_IDLE,
     HTTP_STATE_PROCESSING,
     HTTP_STATE_COMPLETE,
@@ -13,14 +14,13 @@ typedef enum {
 
 typedef int (*http_callback_t)(void *ctx, const char *response);
 
-typedef struct {
+typedef struct 
+{
     char *host;
     char *port;
     http_state_t state;
     void *tcp_ctx;
-    
     char response[4096];
-    
     http_callback_t callback;
     void *callback_ctx;
 } http_t;

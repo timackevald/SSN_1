@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
     {
         if (ssn1_work(self) == 2)
         {
-            printf("Successfully finish cycle\n");
+            // No need for spam-spam-spam, we like spam
         }
         else if (ssn1_work(self) == 1)
         {

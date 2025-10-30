@@ -8,7 +8,8 @@
 
 typedef int (*ssn1_callback_t)(void *ctx, const char *response);
 
-typedef struct {
+typedef struct 
+{
     void *http_ctx;
     ssn1_callback_t http_callback;
 
@@ -19,14 +20,11 @@ typedef struct {
     int    th_flag;
     double log[LOG_24_HOUR];
     int    log_idx;
-
     time_t read_last;
     time_t read_cycle_start;
     double read_current_sum;
     int    read_count;
-    
     int    sending;
-
 } ssn1_t;
 
 int ssn1_init(ssn1_t **self);
