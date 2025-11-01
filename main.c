@@ -1,15 +1,10 @@
-#include "include/ssn-1.h"
 #include "ssn-1.h"
 #include <stdlib.h>
 #include <stdio.h>
-#include <time.h>
 #include <unistd.h>
 
 int main(int argc, char *argv[])
 {
-    /**
-     * @Brief: information about program purpose and use
-     */
     if (argc != 3)
     {
         printf("### SSN-1: Smart Sensor Node 1 ### \n"
@@ -24,9 +19,6 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    /**
-     * @Brief: user input conversion and validation
-     */
     char *end;
     double low_temp_th = strtod(argv[1], &end);
     if (*end != '\0') 
@@ -41,10 +33,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    /**
-     * @Brief: initiating and setting threshold values, informing user of values set
-     */
-    ssn1_t *self;
+    struct ssn1 *self;
     if (ssn1_init(&self) != 0)
     {
         printf("Failed to initiate sensor struct.\n");
@@ -60,13 +49,11 @@ int main(int argc, char *argv[])
     /* MAIN PROGRAM LOOP*/
     while (1)
     {
-        if (ssn1_work(self) == 2)
+        int rv = ssn1_work(self);
+
+        if (rv == 1 && self->th_flag == 1)
         {
-            // No need for spam-spam-spam, we like spam
-        }
-        else if (ssn1_work(self) == 1)
-        {
-            printf("Successfully took reading\n");
+            printf("[WARNING] Threshold breached!\n");
         }
         else 
         {

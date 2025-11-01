@@ -1,7 +1,7 @@
 # --- Compiler and flags ---
 CC      = gcc
 LIBS    = 
-CFLAGS  = -Wall -Wextra -Werror -Iinclude -MMD -MP
+CFLAGS  = -g -Wall -Wextra -Werror -Iinclude -MMD -MP
 
 ifeq ($(MODE),debug)
 	CFLAGS += -g -O0

@@ -11,17 +11,17 @@
  * @Param: self Pointer to the ssn1_t structure.
  * @Return: A double representing the simulated temperature reading.
  */ 
-double ssn1_sensor(ssn1_t *self);
+double ssn1_sensor(struct ssn1 *self);
 
 /**
  * @Brief: Callback function executed by the HTTP client upon successful receipt of a server response.
- * @Param: ctx A user-defined context pointer (expected to be ssn1_t*).
+ * @Param: cb_handle Pointer to the embedded http_cb structure.
  * @Param: response The received server response string.
  * @Return: 0 on success.
  */ 
-static int ssn1_http_callback(void *ctx, const char *response)
+static int ssn1_http_callback(struct http_cb *cb_handle, const char *response)
 {
-    ssn1_t *self = (ssn1_t*)ctx;
+    struct ssn1 *self = CONTAINER_OF(cb_handle, struct ssn1, http_handle);
     
     printf("\n");
     printf("========================================\n");
@@ -41,16 +41,17 @@ static int ssn1_http_callback(void *ctx, const char *response)
  * @Param: self Pointer to the ssn1_t pointer where the allocated structure will be stored.
  * @Return: 0 on success, -1 on failure (memory or HTTP client initialization).
  */
-int ssn1_init(ssn1_t **self)
+int ssn1_init(struct ssn1 **self)
 {
-    *self = (ssn1_t*)calloc(1, sizeof(ssn1_t));
+    *self = (struct ssn1 *)calloc(1, sizeof(struct ssn1));
     if (!*self) return -1;
 
     (*self)->read_cycle_start = time(NULL);
     (*self)->read_last        = (*self)->read_cycle_start;
     (*self)->sending          = 0;
-    // Initialize HTTP client with callback
-    http_t *http;
+    
+    // Initialize HTTP client
+    struct http *http;
     if (http_init(&http, "httpbin.org", "80") != 0) 
     {
         printf("Failed to initialize HTTP client\n");
@@ -59,8 +60,10 @@ int ssn1_init(ssn1_t **self)
         return -1;
     }
     (*self)->http_ctx = http;
-    // Set callback from HTTP to SSN1
-    http_set_callback(http, ssn1_http_callback, *self);
+    
+    // Set up the callback - pass the embedded http_cb structure and function pointer
+    (*self)->http_handle.cb_fn = ssn1_http_callback;
+    http_set_callback(http, &(*self)->http_handle, ssn1_http_callback);
 
     return 0;
 }
@@ -70,9 +73,9 @@ int ssn1_init(ssn1_t **self)
  * @Param: self Pointer to the ssn1_t structure.
  * @Return: 0: Nothing ready. 1: Averaging cycle complete and transmission initiated. 2: New reading taken.
  */
-int ssn1_work(ssn1_t *self)
+int ssn1_work(struct ssn1 *self)
 {
-    http_t *http = (http_t*)self->http_ctx;
+    struct http *http = (struct http *)self->http_ctx;
     
     // If we're in the middle of sending, drive the HTTP state machine
     if (self->sending) 
@@ -108,7 +111,6 @@ int ssn1_work(ssn1_t *self)
              || self->temp_average > self->high_th_warning)
         {
             self->th_flag = 1;
-            printf("[SSN1] WARNING: Temperature threshold breached!\n");
         }
         else
         {
@@ -161,14 +163,14 @@ int ssn1_work(ssn1_t *self)
  * @Param: self Pointer to the ssn1_t pointer to be disposed and set to NULL.
  * @Return: 0 on success, -1 if the pointer is invalid.
  */
-int ssn1_dispose(ssn1_t **self)
+int ssn1_dispose(struct ssn1 **self)
 {
     if (!self || !*self) return -1;
     printf("[SSN1] Disposing sensor...\n");
     // Cleanup HTTP (which will cleanup TCP)
     if ((*self)->http_ctx) 
     {
-        http_dispose((http_t**)&(*self)->http_ctx);
+        http_dispose((struct http **)&(*self)->http_ctx);
     }
     // Free the struct
     free(*self);
@@ -183,7 +185,7 @@ int ssn1_dispose(ssn1_t **self)
  * @Param: self Pointer to the ssn1_t structure.
  * @Return: A random double value within a range slightly over the high/low warning thresholds.
  */
-double ssn1_sensor(ssn1_t *self)
+double ssn1_sensor(struct ssn1 *self)
 {
     double low  = self->low_th_warning;
     double high = self->high_th_warning;

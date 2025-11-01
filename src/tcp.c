@@ -1,4 +1,5 @@
 #include "tcp.h"
+#include "http.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -27,9 +28,9 @@ static int tcp_set_nonblocking(int sockfd)
  * @Param: port The port number as a string.
  * @Return: 0 on success, -1 on failure (e.g., memory allocation error).
  */ 
-int tcp_init(tcp_t **self, const char *host, const char *port)
+int tcp_init(struct tcp **self, const char *host, const char *port)
 {
-    *self = (tcp_t*)calloc(1, sizeof(tcp_t));
+    *self = (struct tcp *)calloc(1, sizeof(struct tcp));
     if (!*self) 
     {
         printf("[TCP] Failed to allocate memory\n");
@@ -48,15 +49,15 @@ int tcp_init(tcp_t **self, const char *host, const char *port)
 /**
  * @Brief: Sets the user-defined callback function and context to be executed upon successful response reception.
  * @Param: self Pointer to the initialized tcp_t structure.
- * @Param: callback The function pointer to be called upon completion.
- * @Param: ctx A user-defined context pointer passed to the callback.
+ * @Param: cb_handle Pointer to the embedded tcp_cb structure in the parent (HTTP).
+ * @Param: fn The callback function pointer.
  * @Return: void
  */ 
-void tcp_set_callback(tcp_t *self, tcp_callback_t callback, void *ctx)
+void tcp_set_callback(struct tcp *self, struct tcp_cb *cb_handle, tcp_cb_fn fn)
 {
     if (!self) return;
-    self->callback = callback;
-    self->callback_ctx = ctx;
+    self->http_handle = cb_handle;
+    cb_handle->cb_fn = fn;
 }
 
 /**
@@ -66,7 +67,7 @@ void tcp_set_callback(tcp_t *self, tcp_callback_t callback, void *ctx)
  * @Param: len The size of the data buffer in bytes.
  * @Return: 0 on success, -1 if unable to send (e.g., not in IDLE state or memory allocation failure).
  */ 
-int tcp_send_request(tcp_t *self, const char *data, size_t len)
+int tcp_send_request(struct tcp *self, const char *data, size_t len)
 {
     if (!self || self->state != TCP_STATE_IDLE) 
     {
@@ -98,7 +99,7 @@ int tcp_send_request(tcp_t *self, const char *data, size_t len)
  * @Param: self Pointer to the initialized tcp_t structure.
  * @Return: 0 on success (connection started or finished), -1 on error (resolution or socket failure).
  */ 
-static int tcp_start_connect(tcp_t *self)
+static int tcp_start_connect(struct tcp *self)
 {
     struct addrinfo hints, *res;
     int ret;
@@ -152,7 +153,7 @@ static int tcp_start_connect(tcp_t *self)
  * @Param: self Pointer to the initialized tcp_t structure.
  * @Return: 0 on successful connection, -1 if the connection failed.
  */ 
-static int tcp_check_connect(tcp_t *self)
+static int tcp_check_connect(struct tcp *self)
 {
     int error = 0;
     socklen_t len = sizeof(error);
@@ -178,7 +179,7 @@ static int tcp_check_connect(tcp_t *self)
  * @Param: self Pointer to the initialized tcp_t structure.
  * @Return: 1 if all data has been sent, 0 if sending would block, -1 on a socket error.
  */ 
-static int tcp_do_send(tcp_t *self)
+static int tcp_do_send(struct tcp *self)
 {
     while (self->sent_bytes < self->send_len) 
     {
@@ -210,7 +211,7 @@ static int tcp_do_send(tcp_t *self)
  * @Param: self Pointer to the initialized tcp_t structure.
  * @Return: 1 if the connection was closed by the server (and all data received), 0 if data was received or would block, -1 on a socket error.
  */ 
-static int tcp_do_recv(tcp_t *self)
+static int tcp_do_recv(struct tcp *self)
 {
     ssize_t received = recv(self->sockfd,
                             self->recv_buffer + self->recv_bytes,
@@ -244,7 +245,7 @@ static int tcp_do_recv(tcp_t *self)
  * @Param: self Pointer to the initialized tcp_t structure.
  * @Return: void
  */ 
-static void tcp_cleanup(tcp_t *self)
+static void tcp_cleanup(struct tcp *self)
 {
     if (self->sockfd >= 0) 
     {
@@ -267,7 +268,7 @@ static void tcp_cleanup(tcp_t *self)
  * @Param: self Pointer to the initialized tcp_t structure.
  * @Return: 1 if a full request/response cycle completed, 0 if still processing, -1 on an error.
  */ 
-int tcp_work(tcp_t *self)
+int tcp_work(struct tcp *self)
 {
     if (!self) return -1;
     
@@ -325,9 +326,9 @@ int tcp_work(tcp_t *self)
             return 0;
             
         case TCP_STATE_COMPLETE:
-            if (self->callback) 
+            if (self->http_handle && self->http_handle->cb_fn) 
             {
-                self->callback(self->callback_ctx, self->recv_buffer, self->recv_bytes);
+                self->http_handle->cb_fn(self->http_handle, self->recv_buffer, self->recv_bytes);
             }
             tcp_cleanup(self);
             self->state = TCP_STATE_IDLE;
@@ -348,7 +349,7 @@ int tcp_work(tcp_t *self)
  * @Param: self Pointer to the tcp_t pointer to be disposed and set to NULL.
  * @Return: 0 on success, -1 if the pointer is invalid.
  */ 
-int tcp_dispose(tcp_t **self)
+int tcp_dispose(struct tcp **self)
 {
     if (!self || !*self) return -1;
     tcp_cleanup(*self);

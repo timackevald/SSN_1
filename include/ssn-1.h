@@ -2,17 +2,23 @@
 #define __SSN1_H__
 
 #include <time.h>
+#include "http.h"
 
 #define LOG_24_HOUR 1440
 #define N_READINGS 60
 
-typedef int (*ssn1_callback_t)(void *ctx, const char *response);
+typedef struct ssn1 ssn1_t;
 
-typedef struct 
+struct ssn1
 {
-    void *http_ctx;
-    ssn1_callback_t http_callback;
-
+    // 1. SSN1 embeds the HTTP callback structure.
+    // This is the member passed to http_set_callback().
+    // The HTTP layer calls a function associated with this handle.
+    // This allows the ssn1_http_callback to use container_of(http_handle, struct ssn1, http_handle)
+    // to find the address of its parent ssn1_t structure.
+    struct http_cb http_handle;
+    struct http *http_ctx;
+    // ---------------------------------------------------------------------------------------//
     double temp_read;
     double temp_average;
     double low_th_warning;
@@ -25,10 +31,10 @@ typedef struct
     double read_current_sum;
     int    read_count;
     int    sending;
-} ssn1_t;
+};
 
-int ssn1_init(ssn1_t **self);
-int ssn1_work(ssn1_t *self);
-int ssn1_dispose(ssn1_t **self);
+int ssn1_init(struct ssn1 **self);
+int ssn1_work(struct ssn1 *self);
+int ssn1_dispose(struct ssn1 **self);
 
 #endif /* __SSN1_H__ */

@@ -1,8 +1,18 @@
 #ifndef __TCP_H_
 #define __TCP_H_
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
+
+struct http; // Forward declaration of the HTTP context for the container_of macro. 
+
+struct tcp_cb;
+typedef int (*tcp_cb_fn)(struct tcp_cb *self, const char *data, size_t len);
+
+struct tcp_cb
+{
+    tcp_cb_fn cb_fn;
+};
 
 typedef enum 
 {
@@ -15,9 +25,9 @@ typedef enum
     TCP_STATE_ERROR
 } tcp_state_t;
 
-typedef int (*tcp_callback_t)(void *ctx, const char *response, size_t len);
+typedef struct tcp tcp_t;
 
-typedef struct 
+struct tcp
 {
     char *host;
     char *port;
@@ -28,14 +38,14 @@ typedef struct
     size_t sent_bytes;
     char recv_buffer[4096];
     size_t recv_bytes;
-    tcp_callback_t callback;
-    void *callback_ctx;
-} tcp_t;
+    // Stores the pointer to the HTTP layer's embedded callback structure.    
+    struct tcp_cb *http_handle; 
+};
 
-int tcp_init(tcp_t **self, const char *host, const char *port);
-void tcp_set_callback(tcp_t *self, tcp_callback_t callback, void *ctx);
-int tcp_send_request(tcp_t *self, const char *data, size_t len);
-int tcp_work(tcp_t *self);
-int tcp_dispose(tcp_t **self);
+int tcp_init(struct tcp **self, const char *host, const char *port);
+void tcp_set_callback(struct tcp *self, struct tcp_cb *cb_handle, tcp_cb_fn fn);
+int tcp_send_request(struct tcp *self, const char *data, size_t len);
+int tcp_work(struct tcp *self);
+int tcp_dispose(struct tcp **self);
 
 #endif /* __TCP_H_ */

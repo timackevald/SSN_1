@@ -7,14 +7,14 @@
 
 /**
  * @Brief: Callback function executed by the underlying TCP layer when a response is received.
- * @Param: ctx A user-defined context pointer (expected to be http_t*).
+ * @Param: cb_handle Pointer to the embedded tcp_cb structure.
  * @Param: response The raw TCP response data buffer.
  * @Param: len The length of the response data.
  * @Return: 0 on success.
  */
-static int http_tcp_callback(void *ctx, const char *response, size_t len)
+static int http_tcp_callback(struct tcp_cb *cb_handle, const char *response, size_t len)
 {
-    http_t *self = (http_t*)ctx;
+    struct http *self = CONTAINER_OF(cb_handle, struct http, tcp_handle);
     printf("[HTTP] Received TCP response (%zu bytes)\n", len);
     // Copy the response, ensuring null termination and boundary check.
     size_t copy_len = len < sizeof(self->response) - 1 ? len : sizeof(self->response) - 1;
@@ -33,9 +33,9 @@ static int http_tcp_callback(void *ctx, const char *response, size_t len)
  * @Param: port The port number as a string (e.g., "80" for HTTP).
  * @Return: 0 on success, -1 on failure (memory or TCP initialization error).
  */
-int http_init(http_t **self, const char *host, const char *port)
+int http_init(struct http **self, const char *host, const char *port)
 {
-    *self = (http_t*)calloc(1, sizeof(http_t));
+    *self = (struct http *)calloc(1, sizeof(struct http));
     if (!*self) return -1;
     
     (*self)->host = strdup(host);
@@ -43,7 +43,7 @@ int http_init(http_t **self, const char *host, const char *port)
     (*self)->state = HTTP_STATE_IDLE;
     
     // Initialize the underlying TCP context
-    tcp_t *tcp;
+    struct tcp *tcp;
     if (tcp_init(&tcp, host, port) != 0) 
     {
         printf("[HTTP] Failed to initialize TCP\n");
@@ -55,8 +55,10 @@ int http_init(http_t **self, const char *host, const char *port)
     }
     
     (*self)->tcp_ctx = tcp;
-    // Set the TCP callback to the HTTP handler
-    tcp_set_callback(tcp, http_tcp_callback, *self);
+    
+    // Set up the TCP callback - pass the embedded tcp_cb structure and function pointer
+    (*self)->tcp_handle.cb_fn = http_tcp_callback;
+    tcp_set_callback(tcp, &(*self)->tcp_handle, http_tcp_callback);
     
     printf("[HTTP] Initialized for %s:%s\n", host, port);
     return 0;
@@ -65,15 +67,15 @@ int http_init(http_t **self, const char *host, const char *port)
 /**
  * @Brief: Sets the user-defined callback function and context for when the HTTP response is fully processed.
  * @Param: self Pointer to the initialized http_t structure.
- * @Param: callback The function pointer to be called upon HTTP completion.
- * @Param: ctx A user-defined context pointer passed to the HTTP callback.
+ * @Param: cb_handle Pointer to the embedded http_cb structure in the parent (SSN1).
+ * @Param: fn The callback function pointer.
  * @Return: void
  */
-void http_set_callback(http_t *self, http_callback_t callback, void *ctx)
+void http_set_callback(struct http *self, struct http_cb *cb_handle, http_cb_fn fn)
 {
     if (!self) return;
-    self->callback = callback;
-    self->callback_ctx = ctx;
+    self->ssn1_handle = cb_handle;
+    cb_handle->cb_fn = fn;
 }
 
 /**
@@ -85,7 +87,7 @@ void http_set_callback(http_t *self, http_callback_t callback, void *ctx)
  * @Param: threshold_flag Flag indicating if a warning threshold was breached (0 or 1).
  * @Return: 0 on successful queuing, -1 on failure (not IDLE, JSON/HTTP formatting error, or TCP queue failure).
  */
-int http_send_temp_data(http_t *self, const char *device_id,
+int http_send_temp_data(struct http *self, const char *device_id,
                          time_t timestamp, double temperature, int threshold_flag)
 {
     if (!self || self->state != HTTP_STATE_IDLE) 
@@ -94,7 +96,7 @@ int http_send_temp_data(http_t *self, const char *device_id,
         return -1;
     }
     
-    tcp_t *tcp = (tcp_t*)self->tcp_ctx;
+    struct tcp *tcp = (struct tcp *)self->tcp_ctx;
     
     // Format timestamp
     char time_str[64];
@@ -156,11 +158,11 @@ int http_send_temp_data(http_t *self, const char *device_id,
  * @Param: self Pointer to the initialized http_t structure.
  * @Return: 1 if a full request/response cycle completed, 0 if still processing, -1 on an error.
  */
-int http_work(http_t *self)
+int http_work(struct http *self)
 {
     if (!self) return -1;
     
-    tcp_t *tcp = (tcp_t*)self->tcp_ctx;
+    struct tcp *tcp = (struct tcp *)self->tcp_ctx;
     
     switch (self->state) 
     {
@@ -181,9 +183,9 @@ int http_work(http_t *self)
             
         case HTTP_STATE_COMPLETE:
             // Response received and state set by http_tcp_callback
-            if (self->callback) 
+            if (self->ssn1_handle && self->ssn1_handle->cb_fn) 
             {
-                self->callback(self->callback_ctx, self->response); // Notify user
+                self->ssn1_handle->cb_fn(self->ssn1_handle, self->response);
             }
             self->state = HTTP_STATE_IDLE;
             return 1;
@@ -201,13 +203,13 @@ int http_work(http_t *self)
  * @Param: self Pointer to the http_t pointer to be disposed and set to NULL.
  * @Return: 0 on success, -1 if the pointer is invalid.
  */
-int http_dispose(http_t **self)
+int http_dispose(struct http **self)
 {
     if (!self || !*self) return -1;
     // Dispose of the underlying TCP client
     if ((*self)->tcp_ctx) 
     {
-        tcp_dispose((tcp_t**)&(*self)->tcp_ctx);
+        tcp_dispose((struct tcp **)&(*self)->tcp_ctx);
     }
     if ((*self)->host) free((*self)->host);
     if ((*self)->port) free((*self)->port);
